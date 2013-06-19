@@ -27,50 +27,19 @@ def eu(length, numpulses):
 
     return pulses
 
-def getevents(lengths, pattern):
-    """ Takes pattern: [0, 1]
-        Returns event list: [[0, 44100], [1, 44100]]
-    """
-
-    events = []
-    count = 0
-    value = None
-    event = []
-
-    for i, p in enumerate(pattern):
-
-        prev = value
-        value = p
-
-        # Null to zero always starts new zero
-        if prev is None and value is 0:
-            # Start zero, add to length
-            event = [0, lenbeat]
-
-        # Any transition to one always starts new one
-        elif value is 1:
-            # Add last event if not empty to events and start a new one
-            if len(event) == 2:
-                events += [ event ]
-
-            # Start one, add to length
-            event = [1, lengths[i]]
-
-        # One to zero always adds to one
-        # Zero to zero always adds to zero
-        elif prev is 0 or prev is 1 and value is 0:
-            # Add to length
-            event[1] += lengths[i] 
-
-    return events
-
 def hihat(amp, length):
+    if amp == 0:
+        return dsp.pad('', 0, length)
+
     def hat(length):
+        lowf = dsp.rand(6000, 11000)
+        highf = dsp.rand(11000, 17000)
+        
         if dsp.randint(0, 6) == 0:
-            out = bln(length, 9000, 14000)
+            out = bln(length, lowf, highf)
             out = dsp.env(out, 'line')
         else:
-            out = bln(int(length * 0.05), 9000, 14000)
+            out = bln(int(length * 0.05), lowf, highf)
             out = dsp.env(out, 'phasor')
             out = dsp.pad(out, 0, length - dsp.flen(out))
 
@@ -84,6 +53,9 @@ def hihat(amp, length):
     return out
 
 def snare(amp, length):
+    if amp == 0:
+        return dsp.pad('', 0, length)
+
     # Two layers of noise: lowmid and high
     out = dsp.mix([ bln(int(length * 0.2), 700, 3200, 'impulse'), bln(int(length * 0.01), 7000, 9000) ])
     
@@ -93,6 +65,9 @@ def snare(amp, length):
     return out
 
 def kick(amp, length):
+    if amp == 0:
+        return dsp.pad('', 0, length)
+
     fhigh = 160.0
     flow = 60.0
     fdelta = fhigh - flow
@@ -117,6 +92,9 @@ def kick(amp, length):
 
 
 def clap(amp, length):
+    if amp == 0:
+        return dsp.pad('', 0, length)
+
     # Two layers of noise: lowmid and high
     out = dsp.mix([ bln(int(length * 0.2), 600, 1200), bln(int(length * 0.2), 7000, 9000) ])
     
@@ -126,11 +104,12 @@ def clap(amp, length):
     return out
 
 def make(drum, pat, lengths):
-    events = getevents(lengths, pat)
+    events = [ [pat[i], lengths[i]] for i in range(len(pat)) ]
 
     if len(events) > 0:
         out = ''.join([ drum(event[0] * 0.3, event[1]) for event in events ])
     else: 
+        print lengths, pat
         out = ''
 
     return out
