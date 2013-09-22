@@ -2,13 +2,14 @@ from pippi import dsp
 from pippi import tune
 import glob
 import drums
-
-notes = [ dsp.read(note).data for note in glob.glob('sounds/note*') ]
+import rhodes
 
 speeds = [ 1.0, 1.5, 2.0 ]
-scale = tune.fromdegrees([1, 4, 5, 6, 8, 9], octave=3, root='d')
+scale = tune.fromdegrees([1, 4, 5, 3, 6, 8, 9], octave=2, root='e')
 envs = ['line', 'tri', 'hann', 'phasor', 'impulse']
 wforms = ['tri', 'saw', 'impulse', 'square']
+
+notes = [ rhodes.rhodes(dsp.stf(dsp.rand(4, 7)), freq, 0.3) for freq in scale ]
 
 layer = [ dsp.randchoose(notes) for i in range(40) ]
 layer = [ dsp.pan(note, dsp.rand()) for note in layer ]
@@ -25,12 +26,16 @@ arpsPlay, leadPlay, hatsPlay, blipsPlay, foldsPlay, kicksPlay, clapsPlay, bassPl
 
 intro_drone_pad_length, intro_drone_length, outro_drone_pad_length, outro_drone_length = 0,0,0,0
 
+
+vary_sections = [ dsp.randint(7, 12) for vs in range(2) ]
+
 def canPlay(section_name='none', index=0):
     if section_name == 'intro':
-        return index >= 0 and index <= 4
+        return False
+        #return index >= 0 and index <= 4
 
     if section_name == 'development':
-        return index >= 5 and index <= 7 
+        return index >= 0 and index <= 7 
 
     if section_name == 'jam':
         return index >= 8 and index <= 11
@@ -39,11 +44,16 @@ def canPlay(section_name='none', index=0):
         return index >= 12 and index <= 15 
 
     if section_name == 'outro':
-        return index >= 16 and index <= 19
+        return index >= 16 and index <= 18
 
+    if section_name == 'ending':
+        return index == 18
+
+    if section_name == 'vary':
+        return index in vary_sections
 
     if section_name == 'folds':
-        return index >= 1 and index <= 18
+        return index >= 0 and index <= 18
 
     if section_name == 'blips':
         return index >= 4 and index <= 18
@@ -52,20 +62,7 @@ def canPlay(section_name='none', index=0):
         return (index >= 3 and index <= 7) or (index >= 11 and index <= 17)
 
     if section_name == 'theme':
-        return index >= 0 and index <= 19
-
-
-    if section_name == 'intro_drone_pad':
-        return index >= 0 and index <= 5
-
-    if section_name == 'intro_drone':
-        return index >= 6 and index <= 7
-
-    if section_name == 'outro_drone_pad':
-        return index >= 8 and index <= 11
-
-    if section_name == 'outro_drone':
-        return index >= 12 and index <= 20
+        return index >= 0 and index <= 18
 
 
     return True
@@ -86,25 +83,25 @@ for bigoldsection in range(19):
 
     if canPlay('intro', bigoldsection):
         numpoints = 40 
-        numdests = 3 
+        numdests = 20
         minvary = 10
-        maxvary = 1800
+        maxvary = 800
         minfloor = 5
         maxfloor = 500
 
     if canPlay('development', bigoldsection):
         numpoints = 60 
-        numdests = 3 
-        minvary = 10
-        maxvary = 400
-        minfloor = 5
+        numdests = 20 
+        minvary = 1
+        maxvary = 200
+        minfloor = 1 
         maxfloor = 200
 
     if canPlay('jam', bigoldsection):
         numpoints = 200
         numdests = 60
         minvary = 1
-        maxvary = 15
+        maxvary = 35
         minfloor = 190
         maxfloor = 230
 
@@ -123,6 +120,18 @@ for bigoldsection in range(19):
         maxvary = 800
         minfloor = 5
         maxfloor = 200
+
+    if canPlay('vary', bigoldsection):
+        numpoints = dsp.randint(8, 100)
+        numdests = numpoints / dsp.randint(2, 4)
+        minvary = dsp.randint(1, 100)
+        maxvary = dsp.randint(100, 300)
+        minfloor = dsp.randint(10, 50)
+        maxfloor = dsp.randint(50, 200)
+
+
+    numpoints *= 3
+    numdests *= 3
 
     lcurve = dsp.breakpoint([ dsp.rand() for l in range(numdests) ], numpoints)
     lvary = dsp.rand(minvary, maxvary)
@@ -268,7 +277,8 @@ for bigoldsection in range(19):
                     if amp == 0:
                         return dsp.pad('', 0, length)
 
-                    bass_note = ['d', 'g', 'a', 'b'][ bassPlay % 4 ]
+                    #bass_note = ['d', 'g', 'a', 'b'][ bassPlay % 4 ]
+                    bass_note = ['e', 'a', 'b', 'c#'][ bassPlay % 4 ]
 
                     out = dsp.tone(length, wavetype='square', freq=tune.ntf(bass_note, oct), amp=amp*0.2)
                     out = dsp.env(out, 'random')
@@ -285,7 +295,8 @@ for bigoldsection in range(19):
 
             if dsp.randint(0,1) == 0 or canPlay('jam', bigoldsection):
                 # Lead synth
-                lead_note = ['d', 'g', 'a', 'b'][ leadPlay % 4 ]
+                #lead_note = ['d', 'g', 'a', 'b'][ leadPlay % 4 ]
+                lead_note = ['e', 'a', 'b', 'c#'][ leadPlay % 4 ]
 
                 lead = dsp.tone(tlen / 2, wavetype='tri', freq=tune.ntf(lead_note, 4), amp=0.2)
                 lead = dsp.env(lead, 'phasor')
@@ -293,13 +304,13 @@ for bigoldsection in range(19):
                 leadPlay += 1
                 layers += [ lead ]
 
-        def makeArps(seg, oct=5, reps=4):
+        def makeArps(seg, oct=3, reps=4):
             arp_degrees = [1,2,3,5,8,9,10]
             if dsp.randint(0,1) == 0:
                 arp_degrees.reverse()
 
             arp_degrees = dsp.rotate(arp_degrees, rand=True)
-            arp_notes = tune.fromdegrees(arp_degrees[:reps], oct, 'g')
+            arp_notes = tune.fromdegrees(arp_degrees[:reps], oct, 'e')
 
             arps = ''
 
@@ -308,10 +319,10 @@ for bigoldsection in range(19):
                 arp_length /= 2
                 arp_pair = arp_notes[ arp_count % len(arp_notes) ], arp_notes[ (arp_count + 1) % len(arp_notes) ]
 
-                arp_one = dsp.tone(arp_length, wavetype='impulse', freq=arp_pair[0], amp=0.075)
+                arp_one = dsp.tone(arp_length, wavetype='tri', freq=arp_pair[0], amp=0.075)
                 arp_one = dsp.env(arp_one, 'random')
 
-                arp_two = dsp.tone(arp_length, wavetype='impulse', freq=arp_pair[1], amp=0.08)
+                arp_two = dsp.tone(arp_length, wavetype='tri', freq=arp_pair[1], amp=0.08)
                 arp_two = dsp.env(arp_two, 'random')
 
                 arps += arp_one + arp_two
@@ -325,14 +336,14 @@ for bigoldsection in range(19):
         if canPlay('jam', bigoldsection) and dsp.randint(0,1) == 0:
             # Lead synth
             arpsPlay += 1
-            arps = dsp.mix([ makeArps(seg, dsp.randint(4,5), dsp.randint(3, 4)) for a in range(dsp.randint(1, 4)) ]) 
+            arps = dsp.mix([ makeArps(seg, dsp.randint(1,3), dsp.randint(3, 4)) for a in range(dsp.randint(1, 4)) ]) 
             arps = mixdrift(arps)
             layers += [ arps ]
 
         if canPlay('breakdown', bigoldsection) and dsp.randint(0,1):
             # Lead synth
             arpsPlay += 1
-            layers += [ makeArps(seg, dsp.randint(3, 5), dsp.randint(3, 6)) ]
+            layers += [ makeArps(seg, dsp.randint(1, 3), dsp.randint(3, 6)) ]
 
 
         # Theme
@@ -346,8 +357,8 @@ for bigoldsection in range(19):
                 note = theme_note
 
             if dsp.randint(0, 5) != 0:
-                if canPlay('intro', bigoldsection):
-                    tlen = dsp.flen(note)
+                #if canPlay('intro', bigoldsection):
+                    #tlen = dsp.flen(note)
 
                 note = dsp.fill(note, tlen, silence=True)
             else:
@@ -395,8 +406,10 @@ for bigoldsection in range(19):
 
         sounds = dsp.fill(dsp.mix(layers), tlen)
 
-        if bigoldsection == 19:
-            sounds = dsp.mix([ sounds, dsp.pine(sounds, tlen * 2, scale[0]) ])
+        if canPlay('ending', bigoldsection):
+            sounds = dsp.vsplit(sounds, dsp.mstf(1), dsp.mstf(200))
+            sounds = [ dsp.pad(s, 0, dsp.mstf(dsp.rand(50, 250))) for s in sounds ]
+            sounds = ''.join(sounds)
 
         subsection_length = dsp.flen(sounds)
         print 'subsection length:', dsp.fts(subsection_length), seg_index
@@ -407,62 +420,11 @@ for bigoldsection in range(19):
     section_length = dsp.flen(section)
     print 'section length:', dsp.fts(section_length)
 
-    if canPlay('intro_drone_pad', bigoldsection):
-        intro_drone_pad_length += section_length
-        print 'intro drone pad length:', dsp.fts(intro_drone_pad_length)
-
-    if canPlay('intro_drone', bigoldsection):
-        intro_drone_length += section_length
-        print 'intro drone length:', dsp.fts(intro_drone_length)
-
-    if canPlay('outro_drone_pad', bigoldsection):
-        outro_drone_pad_length += section_length
-
-    if canPlay('outro_drone', bigoldsection):
-        outro_drone_length += section_length
-
-
     sections += [ section ]
     print
 
 print 
 
-print 'intro drone pad length:', dsp.fts(intro_drone_pad_length)
-
 out = ''.join(sections)
 
-# intro drone
-i_freq = tune.ntf('g', 2)
-i_drone = []
-i_freq_len = dsp.htf(i_freq)
-
-for h in range(1, 5):
-    h_freq = i_freq * h
-    num_icycles = intro_drone_length / dsp.htf(h_freq)
-    h_drone = dsp.cycle(h_freq, 'square', 0.05) * num_icycles
-    h_drone = dsp.pan(h_drone, dsp.rand())
-    i_drone += [ h_drone ]
-
-i_drone = dsp.mix(i_drone)
-
-# Stupid segfault...
-def makeDrone(snd):
-    snd = dsp.split(snd, i_freq_len)
-
-    for i, s in enumerate(snd):
-        amp = float(i) / (len(snd) - 1)
-        s = dsp.amp(s, amp)
-
-        snd[i] = dsp.fnoise(s, amp * 0.025)
-
-    snd = ''.join(snd)
-
-    return snd
-
-i_drone = makeDrone(i_drone)
-i_drone = dsp.fill(i_drone, intro_drone_length)
-i_drone = dsp.pad(i_drone, intro_drone_pad_length, dsp.flen(out) - dsp.flen(i_drone) - intro_drone_pad_length)
-
-out = dsp.mix([ out, i_drone ])
-
-dsp.write(out, 'amber', timestamp=True)
+dsp.write(out, 'amber', timestamp=False)
