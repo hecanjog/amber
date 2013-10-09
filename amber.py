@@ -152,7 +152,6 @@ for bigoldsection in range(19):
 
     print 'num segments in section:', len(segments)
 
-# Transpose source guitar melody
     speeds = [ 1.0, 1.5, 1.25, 1.333 ]
 
     for seg_index, seg in enumerate(segments):
@@ -427,4 +426,4 @@ print
 
 out = ''.join(sections)
 
-dsp.write(out, 'amber', timestamp=False)
+dsp.write(out, 'amber', timestamp=True)
