@@ -232,7 +232,7 @@ for bigoldsection in range(19):
             if bigoldsection > 9:
                 kpat = single
             else:
-                kpat = dsp.rotate(single, rand=True)
+                kpat = dsp.rotate(single, vary=True)
 
             kicks = drums.make(drums.kick, kpat, seg)
 
@@ -253,7 +253,7 @@ for bigoldsection in range(19):
             if len(seg) > 4:
                 maxbeats = dsp.randint(2, len(seg) / 2)
                 clappat = drums.eu(len(seg), maxbeats)
-                claps = drums.make(drums.clap, dsp.rotate(clappat, rand=True), seg)
+                claps = drums.make(drums.clap, dsp.rotate(clappat, vary=True), seg)
 
                 if dsp.randint(0, 3) == 0:
                     if dsp.randint(0,1):
@@ -287,7 +287,7 @@ for bigoldsection in range(19):
                 if bassPlay % 5 == 0:
                     basses = bass(0.5, tlen, 1)
                 else:
-                    basses = drums.make(bass, dsp.rotate(single, rand=True), seg)
+                    basses = drums.make(bass, dsp.rotate(single, vary=True), seg)
 
                 bassPlay += 1
                 layers += [ basses ]
@@ -308,7 +308,7 @@ for bigoldsection in range(19):
             if dsp.randint(0,1) == 0:
                 arp_degrees.reverse()
 
-            arp_degrees = dsp.rotate(arp_degrees, rand=True)
+            arp_degrees = dsp.rotate(arp_degrees, vary=True)
             arp_notes = tune.fromdegrees(arp_degrees[:reps], oct, 'e')
 
             arps = ''
