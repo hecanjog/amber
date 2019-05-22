@@ -1,16 +1,7 @@
-from pippi import dsp
+from pippi import dsp, noise, oscs
 
-def bln(length, low=3000.0, high=7100.0, wform='sine2pi'):
-    """ Time-domain band-limited noise generator
-    """
-    outlen = 0
-    cycles = ''
-    while outlen < length:
-        cycle = dsp.cycle(dsp.rand(low, high), wform)
-        outlen += len(cycle)
-        cycles += cycle
-
-    return cycles
+def bln(length, low=3000.0, high=7100.0, wform='sine'):
+    return noise.bln(wform, length, low, high)
 
 def eu(length, numpulses):
     pulses = [ 1 for pulse in range(numpulses) ]
@@ -29,24 +20,22 @@ def eu(length, numpulses):
 
 def hihat(amp, length):
     if amp == 0:
-        return dsp.pad('', 0, length)
+        return dsp.buffer(length=length)
 
     def hat(length):
         lowf = dsp.rand(6000, 11000)
         highf = dsp.rand(11000, 17000)
+
+        if dsp.rand() > 0.5:
+            length *= 0.05
         
-        if dsp.randint(0, 6) == 0:
-            out = bln(length, lowf, highf)
-            out = dsp.env(out, 'line')
-        else:
-            out = bln(int(length * 0.05), lowf, highf)
-            out = dsp.env(out, 'phasor')
-            out = dsp.pad(out, 0, length - dsp.flen(out))
+        out = bln(length, lowf, highf)
+        out = out.env(dsp.choice(['rsaw', 'phasor', 'hannout']))
 
         return out
 
-    if dsp.randint() == 0:
-        out = ''.join([ hat(length / 2), hat(length / 2) ])
+    if dsp.rand() > 0.5:
+        out = dsp.join([ hat(length / 2), hat(length / 2) ])
     else:
         out = hat(length)
 
@@ -54,52 +43,30 @@ def hihat(amp, length):
 
 def snare(amp, length):
     if amp == 0:
-        return dsp.pad('', 0, length)
+        return dsp.buffer(length=length)
 
     # Two layers of noise: lowmid and high
     out = dsp.mix([ bln(int(length * 0.2), 700, 3200, 'impulse'), bln(int(length * 0.01), 7000, 9000) ])
     
-    out = dsp.env(out, 'phasor')
-    out = dsp.pad(out, 0, length - dsp.flen(out))
+    out = out.env('phasor')
+    out = out.pad(end=length - out.dur)
 
     return out
 
 def kick(amp, length):
     if amp == 0:
-        return dsp.pad('', 0, length)
+        return dsp.buffer(length=length)
 
-    fhigh = 160.0
-    flow = 60.0
-    fdelta = fhigh - flow
-
-    target = length
-    pos = 0
-    fpos = fhigh
-
-    out = ''
-    while pos < target:
-        # Add single cycle
-        # Decrease pitch by amount relative to cycle len
-        cycle = dsp.cycle(fpos)
-        #cycle = ''.join([ str(v) for v in dsp.curve(0, dsp.htf(fpos), math.pi * 2) ])
-        pos += dsp.flen(cycle)
-        #fpos = fpos - (fhigh * (length / dsp.htf(fpos)))
-        fpos = fpos - 30.0
-        out += cycle
-
-    return dsp.env(out, 'phasor')
-
-
+    out = oscs.Osc('sine', freq=dsp.win('rsaw', 60, 160)).play(length).env('phasor')
+    return out
 
 def clap(amp, length):
     if amp == 0:
-        return dsp.pad('', 0, length)
+        return dsp.buffer(length=length)
 
     # Two layers of noise: lowmid and high
     out = dsp.mix([ bln(int(length * 0.2), 600, 1200), bln(int(length * 0.2), 7000, 9000) ])
-    
-    out = dsp.env(out, 'phasor')
-    out = dsp.pad(out, 0, length - dsp.flen(out))
+    out = out.env('phasor').pad(end=length - out.dur)
 
     return out
 
@@ -107,10 +74,10 @@ def make(drum, pat, lengths):
     events = [ [pat[i], lengths[i]] for i in range(len(pat)) ]
 
     if len(events) > 0:
-        out = ''.join([ drum(event[0] * 0.3, event[1]) for event in events ])
+        out = dsp.join([ drum(event[0] * 0.3, event[1]) for event in events ])
     else: 
-        print lengths, pat
-        out = ''
+        print(lengths, pat)
+        out = dsp.buffer(length=sum(lengths))
 
     return out
 

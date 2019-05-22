@@ -1,429 +1,282 @@
-from pippi import dsp
-from pippi import tune
+from pippi import dsp, oscs, tune, fx
+from pippi.wavesets import Waveset
 import glob
 import drums
 import rhodes
 
-speeds = [ 1.0, 1.5, 2.0 ]
-scale = tune.fromdegrees([1, 4, 5, 3, 6, 8, 9], octave=2, root='e')
+dsp.seed()
+
+speeds = [ 1.0, 1.5, 1.25, 1.333, 2.0, 3.0 ]
 envs = ['line', 'tri', 'hann', 'phasor', 'impulse']
 wforms = ['tri', 'saw', 'impulse', 'square']
+scale = tune.fromdegrees([1, 3, 4, 5, 3, 6, 8, 2, 9], octave=2, root='e', scale=tune.minor)
+rmx = dsp.read('suitermx.wav')
 
-notes = [ rhodes.rhodes(dsp.stf(dsp.rand(4, 7)), freq, 0.3) for freq in scale ]
+BEAT = 0.2
 
-layer = [ dsp.randchoose(notes) for i in range(40) ]
-layer = [ dsp.pan(note, dsp.rand()) for note in layer ]
-layer = [ dsp.amp(note, dsp.rand(0.1, 0.7)) for note in layer ]
-layer = [ dsp.transpose(note, dsp.randchoose(speeds)) for note in layer ]
-layer = [ dsp.pad(note, 0, dsp.mstf(dsp.rand(500, 2000))) for note in layer ]
-layer = ''.join(layer)
-
-out = ''
-
-themes = [ [ dsp.transpose(note, dsp.randchoose(speeds)) for note in notes * 2 ] for theme in range(8) ]
-
-arpsPlay, leadPlay, hatsPlay, blipsPlay, foldsPlay, kicksPlay, clapsPlay, bassPlay, themePlay = 0,0,0, 0,0,0, 0,0,0
-
-intro_drone_pad_length, intro_drone_length, outro_drone_pad_length, outro_drone_length = 0,0,0,0
-
+out = dsp.buffer()
 
 vary_sections = [ dsp.randint(7, 12) for vs in range(2) ]
 
-def canPlay(section_name='none', index=0):
-    if section_name == 'intro':
-        return False
-        #return index >= 0 and index <= 4
-
-    if section_name == 'development':
-        return index >= 0 and index <= 7 
-
-    if section_name == 'jam':
-        return index >= 8 and index <= 11
-
-    if section_name == 'breakdown':
-        return index >= 12 and index <= 15 
-
-    if section_name == 'outro':
-        return index >= 16 and index <= 18
-
-    if section_name == 'ending':
-        return index == 18
-
-    if section_name == 'vary':
-        return index in vary_sections
-
-    if section_name == 'folds':
-        return index >= 0 and index <= 18
-
-    if section_name == 'blips':
-        return index >= 4 and index <= 18
-
-    if section_name == 'grains':
-        return (index >= 3 and index <= 7) or (index >= 11 and index <= 17)
-
-    if section_name == 'theme':
-        return index >= 0 and index <= 18
-
-
-    return True
-
-sections = []
-
-for bigoldsection in range(19):
-    print 'Section index:', bigoldsection
-    section = ''
-
-    # Defaults
-    numpoints = 20 
-    numdests = 3 
-    minvary = 10
-    maxvary = 1800
-    minfloor = 5
-    maxfloor = 500
-
-    if canPlay('intro', bigoldsection):
-        numpoints = 40 
-        numdests = 20
-        minvary = 10
-        maxvary = 800
-        minfloor = 5
-        maxfloor = 500
-
-    if canPlay('development', bigoldsection):
-        numpoints = 60 
-        numdests = 20 
-        minvary = 1
-        maxvary = 200
-        minfloor = 1 
-        maxfloor = 200
-
-    if canPlay('jam', bigoldsection):
-        numpoints = 200
-        numdests = 60
-        minvary = 1
-        maxvary = 35
-        minfloor = 190
-        maxfloor = 230
+def rotate(items, start=0, vary=False):
+    if vary:
+        start = dsp.randint(0, len(items))
+    return items[-start % len(items):] + items[:-start % len(items)]
+
+def mixdrift(snd):
+    dsnd = snd.vspeed(dsp.win('sine', 1 - dsp.rand(0.005, 0.05), 1 + dsp.rand(0.005, 0.05)))
+    snd = dsp.mix([ snd, dsnd * 0.75 ])
+    return snd
+
+def folds(length, pos, total_length):
+    print('FOLDS', length, pos)
+    freq = tune.ntf('e', octave=3)
+    out = dsp.mix([ rhodes.rhodes(length, freq, 0.3) for freq in scale ])
+    return mixdrift(out)
+
+def blips(length, pos, total_length):
+    print('BLIPS', length, pos)
+    notes = [ rhodes.rhodes(dsp.rand(4, 7), freq, 0.3) for freq in scale ]
+
+    the_blip = notes[0].speed(2.0 * dsp.randint(1, 3)) * 0.4
+    blip = dsp.mix([ the_blip, notes[0].speed(1.5 * dsp.randint(1, 4)) * 0.4 ])
 
-    if canPlay('breakdown', bigoldsection):
-        numpoints = 100
-        numdests = 90
-        minvary = 1
-        maxvary = 800
-        minfloor = 20 
-        maxfloor = 250
-
-    if canPlay('outro', bigoldsection):
-        numpoints = 50
-        numdests = 10
-        minvary = 10
-        maxvary = 800
-        minfloor = 5
-        maxfloor = 200
-
-    if canPlay('vary', bigoldsection):
-        numpoints = dsp.randint(8, 100)
-        numdests = numpoints / dsp.randint(2, 4)
-        minvary = dsp.randint(1, 100)
-        maxvary = dsp.randint(100, 300)
-        minfloor = dsp.randint(10, 50)
-        maxfloor = dsp.randint(50, 200)
+    out = dsp.buffer(length=length)
+    for _ in range(dsp.randint(2, 6)):
+        ba = blip.cut(dsp.rand(0, blip.dur / 4), length / 2).pad(dsp.rand(0, length))
+        bb = blip.cut(dsp.rand(0, blip.dur / 4), length / 2).pad(dsp.rand(0, length))
+        b = dsp.mix([ba.pan(dsp.rand()), bb.pan(dsp.rand())]).taper(0.01)
+        b = fx.crush(b)
+        b = mixdrift(b)
+        out.dub(b)
 
+    return out
 
-    numpoints *= 3
-    numdests *= 3
+def drumset(length, pos, total_length):
+    print('DRUMSET', length, pos)
 
-    lcurve = dsp.breakpoint([ dsp.rand() for l in range(numdests) ], numpoints)
-    lvary = dsp.rand(minvary, maxvary)
-    lfloor = dsp.rand(minfloor, maxfloor)
-    lcurve = [ dsp.mstf(length * lvary + lfloor) for length in lcurve ]
+    if length < 10:
+        div = dsp.choice([2,3,4])
+    else:
+        div = dsp.choice([4,6,8,12,16])
 
-# Break curve into variable size groups
-    segments = []
-    count = 0
-    minseg = 1
-    maxseg = 20
-    while count < len(lcurve):
-        segsize = dsp.randint(minseg, maxseg)
-        seg = lcurve[count : count + segsize]
-        segments += [ seg ]
+    beat = length / div
+    seg = [ beat for _ in range(div) ]
+    layers = []
 
-        count += segsize
+    maxbeats = dsp.randint(len(seg) / 2, len(seg))
+    hatpat = drums.eu(len(seg), maxbeats)
 
-    print 'num segments in section:', len(segments)
+    hats = drums.make(drums.hihat, hatpat, seg) * 0.3
+    hats = mixdrift(hats)
 
-    speeds = [ 1.0, 1.5, 1.25, 1.333 ]
+    if dsp.rand() > 0.5:
+        hats = hats.cloud(length=length, grainlength=1.0/dsp.choice(scale))
 
-    for seg_index, seg in enumerate(segments):
-        tlen = sum(seg)
-        layers = []
+    if dsp.rand() > 0.5:
+        hats = mixdrift(hats)
 
-        def mixdrift(snd):
-            if dsp.randint(0, 4) == 0:
-                dsnd = dsp.drift(snd, dsp.rand(0.001, 0.04))
-                snd = dsp.mix([ snd, dsp.amp(dsnd, 0.5) ])
+    print('MADE HATS')
+    layers += [ hats ]
 
-            return snd
+    kpat = drums.eu(len(seg), maxbeats)
+    kicks = drums.make(drums.kick, kpat, seg)
 
-        if canPlay('folds', bigoldsection):
-            if dsp.randint(0,1) == 0 or canPlay('jam', bigoldsection):
-                # Guitar folds
-                segsounds = []
-                for length in seg:
-                    sounds = [ dsp.cut(layer, dsp.randint(0, dsp.flen(layer) - length), length) for s in range(6) ]
-                    sounds = dsp.mix(sounds)
-                    segsounds += [ sounds ]
+    if dsp.randint(0,1) == 1:
+        kicks = kicks.cloud(length=length, grainlength=1.0/dsp.choice(scale))
+    else:
+        kdivs = dsp.randint(2, 4)
+        kicks = kicks.cloud(length=length / kdivs, grainlength=(1.0/dsp.choice(scale)) * kdivs)
 
-                segsounds = ''.join(segsounds)
-                segsounds = mixdrift(segsounds)
+    if dsp.rand() > 0.5:
+        kicks = mixdrift(kicks)
 
-                foldsPlay += 1
-                layers += [ segsounds ]
+    layers += [ kicks * 0.4 ]
 
+    maxbeats = dsp.randint(2, len(seg) / 2)
+    clappat = drums.eu(len(seg), maxbeats)
+    claps = drums.make(drums.clap, rotate(clappat, vary=True), seg)
 
-        if canPlay('blips', bigoldsection):
-            if dsp.randint(0,1) == 0 or canPlay('jam', bigoldsection):
-                # Blips
-                blips = []
+    if dsp.randint(0,1):
+        claps = claps.cloud(length=length, grainlength=1.0/dsp.choice(scale))
+    else:
+        cdivs = dsp.randint(2, 4)
+        claps = claps.cloud(length=length / cdivs, grainlength=(dsp.choice(scale)) * cdivs)
 
-                the_blip = dsp.amp(dsp.transpose(notes[0], 2.0 * dsp.randint(1, 3)), 0.4)
-                blip = dsp.mix([ the_blip, dsp.amp(dsp.transpose(notes[0], 1.5 * dsp.randint(1, 4)), 0.4) ])
+    if dsp.rand() > 0.5:
+        claps = mixdrift(claps)
 
-                for length in seg:
-                    ba = dsp.cut(blip, dsp.randint(0, dsp.flen(blip) / 4), length / 2)
-                    bb = dsp.cut(blip, dsp.randint(0, dsp.flen(blip) / 4), length / 2)
+    layers += [ claps * 0.4 ]
 
-                    b = dsp.mix([dsp.pan(ba, dsp.rand()), dsp.pan(bb, dsp.rand())])
+    drms = fx.softclip(dsp.mix(layers))
+    if dsp.rand() > 0.5:
+        return fx.lpf(drms, dsp.rand(500, 1000))
+    else:
+        return fx.bpf(drms, dsp.rand(500, 5000))
 
-                    blips += [ dsp.pad(b, 0, length / 2) ]
+def bass_and_lead(length, pos, total_length):
+    numbeats = int(length//BEAT)
+    maxbeats = dsp.randint(2, 16)
+    layers = []
+    def bass(amp, length, oct=2):
+        if amp == 0:
+            return dsp.buffer(length=length)
 
-                blips = dsp.alias(''.join(blips))
-                blips = mixdrift(blips)
+        bass_note = dsp.choice(scale) * 0.25
 
-                blipsPlay += 1
-                layers += [ blips ]
+        stack = Waveset(rmx, limit=dsp.randint(5, 20), offset=dsp.randint(0, 100))
+        stack.normalize()
+        out = oscs.Pulsar2d(stack, windows=['sine'], freq=bass_note).play(length) * dsp.rand(0.02, 0.2)
+        out = fx.lpf(out, bass_note*2)
 
+        return out.env('hannout').taper(dsp.MS*10)
 
-        single = [1] + ([0] * (len(seg) - 1))
+    if dsp.rand() > 0.5:
+        basses = bass(0.5, length, 1)
+    else:
 
-        if canPlay('jam', bigoldsection) or canPlay('breakdown', bigoldsection):
-            # Hats
-            if len(seg) >= 2:
-                if bigoldsection > 11:
-                    maxbeats = dsp.randint(len(seg) / 2, len(seg))
-                    hatpat = drums.eu(len(seg), maxbeats)
-                else:
-                    hatpat = [1] * len(seg)
+        bpat = drums.eu(numbeats, maxbeats)
+        basses = drums.make(bass, bpat, [BEAT]*numbeats)
 
-                hats = drums.make(drums.hihat, hatpat, seg)
-                hats = dsp.amp(hats, 0.3)
-                hats = mixdrift(hats)
+    layers += [ basses ]
 
-                if dsp.randint(0, 3) == 0:
-                    hats = dsp.pine(hats, tlen, dsp.randchoose(scale))
+    lead_note = dsp.choice(scale)
+    stack = Waveset(rmx, limit=dsp.randint(5, 20), offset=dsp.randint(0, 100))
+    stack.normalize()
+    lead = oscs.Pulsar2d(stack, windows=['tri'], freq=lead_note*2, pulsewidth=dsp.win('rnd', 0.1, 1)).play(length/dsp.rand(1,5)).env('hannout').taper(0.01) * dsp.rand(0.02, 0.2)
 
-                if canPlay('breakdown', bigoldsection):
-                    hats = mixdrift(hats)
+    layers += [ lead ]
 
-                hatsPlay += 1
-                layers += [ hats ]
-
-            # Percussion
-            if bigoldsection > 9:
-                kpat = single
-            else:
-                kpat = dsp.rotate(single, vary=True)
-
-            kicks = drums.make(drums.kick, kpat, seg)
-
-            if dsp.randint(0, 3) == 0:
-                if dsp.randint(0,1):
-                    kicks = dsp.pine(kicks, tlen, dsp.randchoose(scale))
-                else:
-                    kdivs = dsp.randint(2, 4)
-                    kicks = dsp.pine(kicks, tlen / kdivs, dsp.randchoose(scale)) * kdivs
-
-
-            if canPlay('breakdown', bigoldsection):
-                kicks = mixdrift(kicks)
-
-            kicksPlay += 1
-            layers += [ dsp.amp(kicks, 0.4) ]
-
-            if len(seg) > 4:
-                maxbeats = dsp.randint(2, len(seg) / 2)
-                clappat = drums.eu(len(seg), maxbeats)
-                claps = drums.make(drums.clap, dsp.rotate(clappat, vary=True), seg)
-
-                if dsp.randint(0, 3) == 0:
-                    if dsp.randint(0,1):
-                        claps = dsp.pine(claps, tlen, dsp.randchoose(scale))
-                    else:
-                        cdivs = dsp.randint(2, 4)
-                        claps = dsp.pine(claps, tlen / cdivs, dsp.randchoose(scale)) * cdivs
-
-                if canPlay('breakdown', bigoldsection):
-                    claps = mixdrift(claps)
-
-                clapsPlay += 1
-                layers += [ dsp.amp(claps, 0.4) ]
-
-
-        if canPlay('jam', bigoldsection) or canPlay('breakdown', bigoldsection):
-            if dsp.randint(0,1) == 0 or canPlay('jam', bigoldsection):
-                # Base
-                def bass(amp, length, oct=2):
-                    if amp == 0:
-                        return dsp.pad('', 0, length)
-
-                    #bass_note = ['d', 'g', 'a', 'b'][ bassPlay % 4 ]
-                    bass_note = ['e', 'a', 'b', 'c#'][ bassPlay % 4 ]
-
-                    out = dsp.tone(length, wavetype='square', freq=tune.ntf(bass_note, oct), amp=amp*0.2)
-                    out = dsp.env(out, 'random')
-
-                    return out
-
-                if bassPlay % 5 == 0:
-                    basses = bass(0.5, tlen, 1)
-                else:
-                    basses = drums.make(bass, dsp.rotate(single, vary=True), seg)
-
-                bassPlay += 1
-                layers += [ basses ]
-
-            if dsp.randint(0,1) == 0 or canPlay('jam', bigoldsection):
-                # Lead synth
-                #lead_note = ['d', 'g', 'a', 'b'][ leadPlay % 4 ]
-                lead_note = ['e', 'a', 'b', 'c#'][ leadPlay % 4 ]
-
-                lead = dsp.tone(tlen / 2, wavetype='tri', freq=tune.ntf(lead_note, 4), amp=0.2)
-                lead = dsp.env(lead, 'phasor')
-
-                leadPlay += 1
-                layers += [ lead ]
-
-        def makeArps(seg, oct=3, reps=4):
-            arp_degrees = [1,2,3,5,8,9,10]
-            if dsp.randint(0,1) == 0:
-                arp_degrees.reverse()
-
-            arp_degrees = dsp.rotate(arp_degrees, vary=True)
-            arp_notes = tune.fromdegrees(arp_degrees[:reps], oct, 'e')
-
-            arps = ''
-
-            arp_count = 0
-            for arp_length in seg:
-                arp_length /= 2
-                arp_pair = arp_notes[ arp_count % len(arp_notes) ], arp_notes[ (arp_count + 1) % len(arp_notes) ]
-
-                arp_one = dsp.tone(arp_length, wavetype='tri', freq=arp_pair[0], amp=0.075)
-                arp_one = dsp.env(arp_one, 'random')
-
-                arp_two = dsp.tone(arp_length, wavetype='tri', freq=arp_pair[1], amp=0.08)
-                arp_two = dsp.env(arp_two, 'random')
-
-                arps += arp_one + arp_two
-                arp_count += 2
-
-            arps = dsp.env(arps, 'random')
-            arps = dsp.pan(arps, dsp.rand())
-
-            return arps
-
-        if canPlay('jam', bigoldsection) and dsp.randint(0,1) == 0:
-            # Lead synth
-            arpsPlay += 1
-            arps = dsp.mix([ makeArps(seg, dsp.randint(1,3), dsp.randint(3, 4)) for a in range(dsp.randint(1, 4)) ]) 
-            arps = mixdrift(arps)
-            layers += [ arps ]
-
-        if canPlay('breakdown', bigoldsection) and dsp.randint(0,1):
-            # Lead synth
-            arpsPlay += 1
-            layers += [ makeArps(seg, dsp.randint(1, 3), dsp.randint(3, 6)) ]
-
-
-        # Theme
-        theme = dsp.randchoose(themes)
-        theme_note = theme[i % len(theme)]
-
-        if canPlay('theme', bigoldsection):
-            if dsp.randint(0, 3) == 0 or not canPlay('intro', bigoldsection):
-                note = dsp.alias(theme_note)
-            else:
-                note = theme_note
-
-            if dsp.randint(0, 5) != 0:
-                #if canPlay('intro', bigoldsection):
-                    #tlen = dsp.flen(note)
-
-                note = dsp.fill(note, tlen, silence=True)
-            else:
-                if tlen > dsp.flen(note) and not canPlay('jam', bigoldsection):
-                    tlen = dsp.flen(note)
-                else:
-                    tlen = tlen * dsp.randint(1, 2)
-
-            themePlay += 1
-            layers += [ note ]
-
-
-        # Grains
-        def makeGrains(out, length=None, env=None):
-            envs = ['tri', 'line', 'flat', 'sine', 'hann']
-            out = dsp.vsplit(out, dsp.mstf(20), dsp.mstf(90))
-
-            out = [ dsp.env(grain, 'hann') for grain in out ]
-            out = [ dsp.pan(grain, dsp.rand()) for grain in out ]
-
-            out = dsp.randshuffle(out)
-            out = ''.join(out)
-            out = dsp.env(out, dsp.randchoose(envs))
-
-            return out
-
-        if canPlay('grains', bigoldsection):
-            #if dsp.randint(0,1) == 0 or canPlay('breakdown', bigoldsection):
-            if dsp.randint(0,2) == 0:
-                if canPlay('breakdown', bigoldsection) and dsp.randint(0,1) == 0:
-                    gnote = dsp.transpose(theme_note, 1.5)
-                else:
-                    gnote = theme_note
-
-                grains = [ makeGrains(gnote) for g in range(dsp.randint(4, 10)) ]
-                for gi, grain in enumerate(grains):
-                    if dsp.randint(0,1) == 0:
-                        grains[gi] = dsp.transpose(grain, 2) * 2
-
-                grains = dsp.mix(grains)
-                grains = dsp.amp(grains, dsp.rand(0.25, 0.55))
-                grains = mixdrift(grains)
-
-                layers += [ grains ]
-
-        sounds = dsp.fill(dsp.mix(layers), tlen)
-
-        if canPlay('ending', bigoldsection):
-            sounds = dsp.vsplit(sounds, dsp.mstf(1), dsp.mstf(200))
-            sounds = [ dsp.pad(s, 0, dsp.mstf(dsp.rand(50, 250))) for s in sounds ]
-            sounds = ''.join(sounds)
-
-        subsection_length = dsp.flen(sounds)
-        print 'subsection length:', dsp.fts(subsection_length), seg_index
-         
-        section += sounds
-
-
-    section_length = dsp.flen(section)
-    print 'section length:', dsp.fts(section_length)
-
-    sections += [ section ]
-    print
-
-print 
-
-out = ''.join(sections)
-
-dsp.write(out, 'amber', timestamp=True)
+    return fx.norm(dsp.mix(layers), 1)
+
+def arp_synth(length, pos, total_length):
+    seg = [ BEAT for _ in range(int(length//BEAT)) ]
+    def makeArps(seg, oct=3, reps=4):
+        arp_degrees = [1,2,3,5,8,9,10]
+        if dsp.randint(0,1) == 0:
+            arp_degrees.reverse()
+
+        arp_degrees = rotate(arp_degrees, vary=True)
+        arp_notes = tune.fromdegrees(arp_degrees[:reps], octave=oct, root='e')
+
+        arps = []
+
+        arp_count = 0
+        for arp_length in seg:
+            arp_length /= 2
+            arp_pair = arp_notes[ arp_count % len(arp_notes) ], arp_notes[ (arp_count + 1) % len(arp_notes) ]
+
+            stack = Waveset(rmx, limit=dsp.randint(5, 20), offset=dsp.randint(0, 100))
+            stack.normalize()
+            arp_one = oscs.Pulsar2d(stack, windows=['tri'], freq=arp_pair[0]*dsp.choice([1,2]), pulsewidth=dsp.win('rnd', 0.1, 1)).play(arp_length).env('hannout').taper(0.01) * dsp.rand(0.02, 0.2)
+
+            arp_two = oscs.Pulsar2d(stack, windows=['tri'], freq=arp_pair[1]*dsp.choice([1,2]), pulsewidth=dsp.win('rnd', 0.1, 1)).play(arp_length).env('hannout').taper(0.01) * dsp.rand(0.02, 0.2)
+            arp_one.dub(arp_two)
+            arps += [ arp_one ]
+            arp_count += 2
+
+        return dsp.join(arps).env('rnd').pan(dsp.rand())
+
+    # Lead synth
+    arps = dsp.mix([ makeArps(seg, dsp.randint(1,3), dsp.randint(3, 4)) for a in range(dsp.randint(1, 4)) ]) 
+    arps = mixdrift(arps)
+
+    return arps
+
+def theme_synth(length, pos, total_length):
+    notes = [ rhodes.rhodes(dsp.rand(4, 7), freq, 0.3) for freq in scale ]
+    themes = [ [ note.speed(dsp.choice(speeds)) for note in notes * 2 ] for theme in range(8) ]
+    theme = dsp.choice(themes)
+    theme_note = dsp.choice(theme)
+
+    note = fx.crush(theme_note)
+
+    return fx.lpf(fx.softclip(note), dsp.win('rnd', 1000, 5000))
+
+def grain_synth(length, pos, total_length):
+    notes = [ rhodes.rhodes(dsp.rand(4, 7), freq, 0.3) for freq in scale ]
+    themes = [ [ note.speed(dsp.choice(speeds)) for note in notes * 2 ] for theme in range(8) ]
+    theme = dsp.choice(themes)
+    theme_note = dsp.choice(theme)
+
+    def makeGrains(snd):
+        envs = ['tri', 'phasor', 'rsaw', 'sine', 'hann']
+        grains = []
+        for g in snd.grains(dsp.MS*20, dsp.MS*90):
+            g = g.env('hann').pan(dsp.rand()).taper(dsp.MS*4)
+            grains += [ g ]
+
+        rgrains = []
+        while len(grains) > 0:
+            r = grains.pop(dsp.randint(0, len(grains)-1))
+            rgrains += [ r ]
+
+        out = dsp.join(rgrains)
+        out = out.env(dsp.choice(envs))
+
+        return out
+
+    if dsp.rand() > 0.5:
+        gnote = theme_note.speed(1.5)
+    else:
+        gnote = theme_note
+
+    grains = [ makeGrains(gnote) for g in range(dsp.randint(4, 10)) ]
+    for gi, grain in enumerate(grains):
+        if dsp.rand() > 0.5:
+            grains[gi] = grain.speed(2).taper(0.01).repeat(2)
+
+    grains = dsp.mix(grains)
+    grains = grains * dsp.rand(0.25, 0.55)
+    grains = mixdrift(grains)
+
+    return grains
+
+def stutter(sounds):
+    grains = []
+    for g in sounds.grains(dsp.MS*1, dsp.MS*200):
+        g.taper(dsp.MS*4).pad(end=dsp.MS*dsp.rand(50, 250))
+        grains += [ g ]
+    return dsp.join(grains)
+
+ORC = dict(
+        folds=folds, 
+        blips=blips, 
+        drumset=drumset, 
+        bass=bass_and_lead, 
+        arp=arp_synth, 
+        theme=theme_synth, 
+        grain=grain_synth
+    )
+
+bars = dsp.win('sinc', 3, 40, 50)
+total_length = sum(bars)
+
+stems = {}
+for stem, cb in ORC.items():
+    stems[stem] = dsp.buffer(length=total_length)
+    pos = 0
+    print('STEM', stem)
+    for i, l in enumerate(bars):
+        l = 3 if l <= 0 else l
+        bar = cb(l, pos, total_length)
+        stems[stem].dub(bar, pos)
+        pos += l      
+
+    print('      %s normalize' % stem)
+    stems[stem] = fx.norm(stems[stem], 1)
+    print('      %s write' % stem)
+    stems[stem].write('stem-%s.wav' % stem)
+
+print()
+
+print('MIXING', total_length)
+out = dsp.buffer(length=total_length)
+for stem, layer in stems.items():
+    out.dub(layer)
+
+print('COMPRESSING/WRITING', total_length)
+out *= 10
+out = fx.compressor(out, -10, 10)
+out = fx.norm(out, 1)
+out.write('amber-bars.wav')

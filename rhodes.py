@@ -1,6 +1,7 @@
-from pippi import dsp
+from pippi import dsp, oscs, noise
 
 def rhodes(total_time, freq=220.0, ampscale=0.5):
+    freq *= 2**dsp.randint(0, 2)
     partials = [
             # Multiple, amplitude, duration
             [1, 0.6, 1.0], 
@@ -11,26 +12,18 @@ def rhodes(total_time, freq=220.0, ampscale=0.5):
 
     layers = []
     for plist in partials:
-        partial = dsp.tone(freq=plist[0] * freq, length=total_time, amp=plist[1] * ampscale)
-
-        env_length = (total_time * plist[2] * 2) / 32 
-        wtable = dsp.wavetable('hann', int(env_length))
-        wtable = wtable[int(env_length / 2):]
-        wtable.extend([0 for i in range(total_time - len(wtable))])
-        print env_length, len(wtable), dsp.flen(partial)
+        #env_length = (total_time * plist[2] * 2) / 32 
+        partial = oscs.Osc('sine', freq=plist[0] * freq, amp=plist[1] * ampscale).play(total_time).env('hannout')
         
-        partial = dsp.split(partial, 32)
-        partial = [ dsp.amp(partial[i], wtable[i]) for i in range(len(partial)) ]
-        layer = ''.join(partial)
+        #partial = dsp.split(partial, 32)
+        #partial = [ dsp.amp(partial[i], wtable[i]) for i in range(len(partial)) ]
+        #layer = ''.join(partial)
 
-        layers += [ layer ]
+        layers += [ partial ]
 
     out = dsp.mix(layers)
-    noise = dsp.amp(dsp.bln(dsp.flen(out) * 2, 2000, 20000), 0.005)
-    noise = dsp.fill(noise, dsp.flen(out))
+    n = noise.bln('sine', out.dur, 2000, 20000) * 0.005
 
-    out = dsp.mix([out, noise])
-
-
+    out = dsp.mix([out, n])
 
     return out
